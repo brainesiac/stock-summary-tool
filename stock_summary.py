@@ -20,7 +20,6 @@ Module usage:
 
 import argparse
 import logging
-import os
 from datetime import datetime
 from typing import Optional
 
@@ -28,8 +27,10 @@ import ollama
 import requests
 from pydantic import BaseModel, Field
 
+import config
+
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.basicConfig(level=getattr(logging, config.LOG_LEVEL), format=config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 
@@ -113,109 +114,6 @@ class StockSummary(BaseModel):
 
 
 # =============================================================================
-# Constants
-# =============================================================================
-
-SECTOR_KEYWORDS = {
-    "Technology": [
-        "tech",
-        "software",
-        "semiconductor",
-        "computer",
-        "digital",
-        "cloud",
-        "cyber",
-        "data",
-        "ai",
-        "intel",
-        "microsoft",
-        "apple",
-        "nvidia",
-        "amd",
-        "oracle",
-    ],
-    "Healthcare": [
-        "pharma",
-        "biotech",
-        "medical",
-        "health",
-        "therapeutics",
-        "bio",
-        "drug",
-        "hospital",
-        "pfizer",
-        "merck",
-        "johnson",
-    ],
-    "Financials": [
-        "bank",
-        "financial",
-        "capital",
-        "investment",
-        "insurance",
-        "mortgage",
-        "credit",
-        "asset",
-        "goldman",
-        "morgan",
-        "chase",
-    ],
-    "Energy": [
-        "oil",
-        "gas",
-        "energy",
-        "petroleum",
-        "solar",
-        "wind",
-        "power",
-        "exxon",
-        "chevron",
-        "shell",
-    ],
-    "Consumer": [
-        "retail",
-        "consumer",
-        "restaurant",
-        "apparel",
-        "food",
-        "beverage",
-        "walmart",
-        "amazon",
-        "target",
-        "costco",
-    ],
-    "Industrial": [
-        "industrial",
-        "manufacturing",
-        "aerospace",
-        "defense",
-        "machinery",
-        "caterpillar",
-        "boeing",
-        "lockheed",
-    ],
-    "Communications": [
-        "telecom",
-        "media",
-        "entertainment",
-        "streaming",
-        "wireless",
-        "verizon",
-        "at&t",
-        "disney",
-        "netflix",
-    ],
-    "Real Estate": [
-        "reit",
-        "real estate",
-        "property",
-        "realty",
-        "housing",
-    ],
-}
-
-
-# =============================================================================
 # Benzinga API Client
 # =============================================================================
 
@@ -223,14 +121,11 @@ SECTOR_KEYWORDS = {
 class BenzingaClient:
     """HTTP client for Benzinga API."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, base_url: str = None):
         self.api_key = api_key
-        self.base_url = "https://api.benzinga.com"
+        self.base_url = base_url or config.BENZINGA_BASE_URL
         self.session = requests.Session()
-        self.session.headers.update({
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        })
+        self.session.headers.update(config.HTTP_HEADERS)
 
     def _request(self, endpoint: str, params: dict = None) -> dict:
         """Make API request with error handling."""
@@ -240,7 +135,7 @@ class BenzingaClient:
 
         url = f"{self.base_url}{endpoint}"
         try:
-            response = self.session.get(url, params=params, timeout=10)
+            response = self.session.get(url, params=params, timeout=config.BENZINGA_TIMEOUT)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -249,7 +144,7 @@ class BenzingaClient:
 
     def get_quote(self, ticker: str) -> Optional[QuoteData]:
         """Fetch delayed quote data for a ticker."""
-        data = self._request("/api/v2/quoteDelayed", {"symbols": ticker})
+        data = self._request(config.ENDPOINTS["quote"], {"symbols": ticker})
 
         if not data:
             return None
@@ -280,9 +175,10 @@ class BenzingaClient:
             previous_close=float(previous_close),
         )
 
-    def get_news(self, ticker: str, page_size: int = 5) -> list[NewsItem]:
+    def get_news(self, ticker: str, page_size: int = None) -> list[NewsItem]:
         """Fetch recent news articles for a ticker."""
-        data = self._request("/api/v2/news", {"tickers": ticker, "pageSize": page_size})
+        page_size = page_size or config.DEFAULT_NEWS_COUNT
+        data = self._request(config.ENDPOINTS["news"], {"tickers": ticker, "pageSize": page_size})
 
         if not data:
             return []
@@ -302,14 +198,15 @@ class BenzingaClient:
     def get_ratings(self, ticker: str) -> list[RatingItem]:
         """Fetch analyst ratings for a ticker."""
         data = self._request(
-            "/api/v2.1/calendar/ratings", {"parameters[tickers]": ticker, "pageSize": 5}
+            config.ENDPOINTS["ratings"],
+            {"parameters[tickers]": ticker, "pageSize": config.DEFAULT_RATINGS_COUNT},
         )
 
         if not data or "ratings" not in data:
             return []
 
         ratings = []
-        for rating in data["ratings"][:5]:
+        for rating in data["ratings"][: config.DEFAULT_RATINGS_COUNT]:
             ratings.append(
                 RatingItem(
                     analyst=rating.get("analyst", "") or rating.get("analyst_name", ""),
@@ -329,7 +226,7 @@ class BenzingaClient:
 
     def get_movers(self, session: str = "REGULAR") -> tuple[list[MoverItem], list[MoverItem]]:
         """Fetch market gainers and losers."""
-        data = self._request("/api/v1/market/movers", {"session": session})
+        data = self._request(config.ENDPOINTS["movers"], {"session": session})
 
         gainers = []
         losers = []
@@ -341,7 +238,7 @@ class BenzingaClient:
 
         # Parse gainers
         if result.get("gainers"):
-            for item in result["gainers"][:5]:
+            for item in result["gainers"][: config.DEFAULT_MOVERS_COUNT]:
                 gainers.append(
                     MoverItem(
                         symbol=item.get("symbol", ""),
@@ -353,7 +250,7 @@ class BenzingaClient:
 
         # Parse losers
         if result.get("losers"):
-            for item in result["losers"][:5]:
+            for item in result["losers"][: config.DEFAULT_MOVERS_COUNT]:
                 losers.append(
                     MoverItem(
                         symbol=item.get("symbol", ""),
@@ -368,14 +265,15 @@ class BenzingaClient:
     def get_economics(self) -> list[EconomicEvent]:
         """Fetch upcoming economic calendar events."""
         data = self._request(
-            "/api/v2.1/calendar/economics", {"parameters[country]": "US", "pagesize": 5}
+            config.ENDPOINTS["economics"],
+            {"parameters[country]": "US", "pagesize": config.DEFAULT_ECONOMICS_COUNT},
         )
 
         if not data or "economics" not in data:
             return []
 
         events = []
-        for event in data["economics"][:5]:
+        for event in data["economics"][: config.DEFAULT_ECONOMICS_COUNT]:
             events.append(
                 EconomicEvent(
                     event_name=event.get("event_name", "") or "",
@@ -398,7 +296,7 @@ def derive_sector(company_name: str) -> str:
         return "General Market"
 
     name_lower = company_name.lower()
-    for sector, keywords in SECTOR_KEYWORDS.items():
+    for sector, keywords in config.SECTOR_KEYWORDS.items():
         if any(kw in name_lower for kw in keywords):
             return sector
     return "General Market"
@@ -411,15 +309,15 @@ def determine_context_level(data: StockData) -> str:
     has_ratings = len(data.ratings) > 0
 
     if has_quote and (has_news or has_ratings):
-        return "stock_specific"
+        return config.CONTEXT_STOCK_SPECIFIC
     elif has_quote:
-        return "sector_context"
+        return config.CONTEXT_SECTOR
     else:
-        return "market_context"
+        return config.CONTEXT_MARKET
 
 
 # =============================================================================
-# Prompt Templates
+# Prompt Building
 # =============================================================================
 
 
@@ -430,7 +328,6 @@ def build_stock_specific_prompt(data: StockData) -> str:
     company = quote.company_name if quote else ticker
 
     # Format news bullets
-    news_bullets = ""
     if data.news:
         news_bullets = "\n".join(f"- {n.title}" for n in data.news[:5])
     else:
@@ -442,28 +339,23 @@ def build_stock_specific_prompt(data: StockData) -> str:
         for r in data.ratings[:3]:
             pt_str = f" (PT: ${r.price_target_current:.2f})" if r.price_target_current else ""
             ratings_bullets += f"- {r.analyst}: {r.action} - {r.rating_current}{pt_str}\n"
+        ratings_bullets = ratings_bullets.strip()
     else:
         ratings_bullets = "No recent analyst activity."
 
-    return f"""Generate a concise stock summary for investors.
+    # Format market cap line
+    market_cap_line = f"Market Cap: ${quote.market_cap / 1e9:.2f}B" if quote.market_cap else ""
 
-Stock: {ticker} ({company})
-Price: ${quote.price:.2f} ({quote.change_percent:+.2f}%)
-Volume: {quote.volume:,}
-{f'Market Cap: ${quote.market_cap/1e9:.2f}B' if quote.market_cap else ''}
-
-Recent News:
-{news_bullets}
-
-Analyst Activity:
-{ratings_bullets.strip()}
-
-Generate a 3-5 sentence narrative summary covering:
-1. Current price action and what's driving it
-2. Key news developments if notable
-3. Analyst sentiment if available
-
-Be factual and avoid speculation. Write in a professional financial news style."""
+    return config.STOCK_SPECIFIC_PROMPT.format(
+        ticker=ticker,
+        company=company,
+        price=quote.price,
+        change_percent=quote.change_percent,
+        volume=quote.volume,
+        market_cap_line=market_cap_line,
+        news_bullets=news_bullets,
+        ratings_bullets=ratings_bullets,
+    )
 
 
 def build_sector_context_prompt(data: StockData) -> str:
@@ -477,25 +369,16 @@ def build_sector_context_prompt(data: StockData) -> str:
     gainers_str = ", ".join(f"{m.symbol} ({m.change_percent:+.1f}%)" for m in data.gainers[:3])
     losers_str = ", ".join(f"{m.symbol} ({m.change_percent:+.1f}%)" for m in data.losers[:3])
 
-    return f"""Generate a concise stock summary with sector context.
-
-Stock: {ticker} ({company})
-Price: ${quote.price:.2f} ({quote.change_percent:+.2f}%)
-Sector: {sector}
-Volume: {quote.volume:,}
-
-No recent company-specific news or analyst activity available.
-
-Market Context:
-- Top gainers today: {gainers_str or 'N/A'}
-- Top losers today: {losers_str or 'N/A'}
-
-Generate a 3-5 sentence summary that:
-1. Describes the stock's current price movement
-2. Contextualizes performance relative to broader market/sector trends
-3. Notes the lack of recent news while remaining informative
-
-Be factual and professional. Acknowledge limited company-specific data."""
+    return config.SECTOR_CONTEXT_PROMPT.format(
+        ticker=ticker,
+        company=company,
+        price=quote.price,
+        change_percent=quote.change_percent,
+        sector=sector,
+        volume=quote.volume,
+        gainers_str=gainers_str or "N/A",
+        losers_str=losers_str or "N/A",
+    )
 
 
 def build_market_context_prompt(data: StockData) -> str:
@@ -507,28 +390,17 @@ def build_market_context_prompt(data: StockData) -> str:
     losers_str = ", ".join(f"{m.symbol} ({m.change_percent:+.1f}%)" for m in data.losers[:3])
 
     # Format economic events
-    events_str = ""
     if data.economic_events:
         events_str = ", ".join(e.event_name for e in data.economic_events[:3])
     else:
         events_str = "No major events scheduled"
 
-    return f"""Generate a market context summary for a stock with limited data.
-
-Stock: {ticker}
-Limited quote or company data available for this ticker.
-
-Market Overview:
-- Top gainers: {gainers_str or 'N/A'}
-- Top losers: {losers_str or 'N/A'}
-- Upcoming economic events: {events_str}
-
-Generate a 3-5 sentence summary that:
-1. Acknowledges limited data for this specific ticker
-2. Provides current market conditions that could affect stocks generally
-3. Notes key economic events or market themes
-
-Be factual and professional. Focus on providing useful market context."""
+    return config.MARKET_CONTEXT_PROMPT.format(
+        ticker=ticker,
+        gainers_str=gainers_str or "N/A",
+        losers_str=losers_str or "N/A",
+        events_str=events_str,
+    )
 
 
 # =============================================================================
@@ -536,13 +408,17 @@ Be factual and professional. Focus on providing useful market context."""
 # =============================================================================
 
 
-def generate_summary_with_ollama(prompt: str, model: str = "qwen2.5-coder:7b") -> str:
+def generate_summary_with_ollama(prompt: str, model: str = None) -> str:
     """Generate summary using Ollama."""
+    model = model or config.OLLAMA_MODEL
     try:
         response = ollama.chat(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.3, "num_predict": 300},
+            options={
+                "temperature": config.LLM_TEMPERATURE,
+                "num_predict": config.LLM_MAX_TOKENS,
+            },
         )
         return response["message"]["content"].strip()
     except Exception as e:
@@ -552,7 +428,7 @@ def generate_summary_with_ollama(prompt: str, model: str = "qwen2.5-coder:7b") -
 
 def generate_fallback_summary(data: StockData, context_level: str) -> str:
     """Generate a structured summary without LLM when Ollama is unavailable."""
-    if context_level == "stock_specific" and data.quote:
+    if context_level == config.CONTEXT_STOCK_SPECIFIC and data.quote:
         quote = data.quote
         summary = f"{data.ticker} ({quote.company_name}) is trading at ${quote.price:.2f}, "
         summary += f"{'up' if quote.change >= 0 else 'down'} {abs(quote.change_percent):.2f}% today. "
@@ -564,7 +440,7 @@ def generate_fallback_summary(data: StockData, context_level: str) -> str:
             summary += f"Latest analyst action: {r.analyst} - {r.action}."
         return summary
 
-    elif context_level == "sector_context" and data.quote:
+    elif context_level == config.CONTEXT_SECTOR and data.quote:
         quote = data.quote
         sector = derive_sector(quote.company_name)
         summary = f"{data.ticker} ({quote.company_name}) in the {sector} sector "
@@ -589,13 +465,13 @@ def generate_fallback_summary(data: StockData, context_level: str) -> str:
 class StockSummaryTool:
     """Main interface for generating stock summaries."""
 
-    def __init__(self, model: str = "qwen2.5-coder:7b", api_key: str = None):
-        self.model = model
-        self.api_key = api_key or os.environ.get("BENZINGA_API_KEY", "")
+    def __init__(self, model: str = None, api_key: str = None):
+        self.model = model or config.OLLAMA_MODEL
+        self.api_key = api_key or config.BENZINGA_API_KEY
         if not self.api_key:
             raise ValueError(
-                "Benzinga API key required. Set BENZINGA_API_KEY environment variable "
-                "or pass api_key parameter."
+                "Benzinga API key required. Set BENZINGA_API_KEY environment variable, "
+                "add it to .env file, or pass api_key parameter."
             )
         self.client = BenzingaClient(self.api_key)
 
@@ -626,9 +502,9 @@ class StockSummaryTool:
 
     def _build_prompt(self, data: StockData, context_level: str) -> str:
         """Build appropriate prompt based on context level."""
-        if context_level == "stock_specific":
+        if context_level == config.CONTEXT_STOCK_SPECIFIC:
             return build_stock_specific_prompt(data)
-        elif context_level == "sector_context":
+        elif context_level == config.CONTEXT_SECTOR:
             return build_sector_context_prompt(data)
         else:
             return build_market_context_prompt(data)
@@ -680,8 +556,8 @@ def main():
     parser.add_argument("ticker", help="Stock ticker symbol (e.g., AAPL, MSFT)")
     parser.add_argument(
         "--model",
-        default="qwen2.5-coder:7b",
-        help="Ollama model to use (default: qwen2.5-coder:7b)",
+        default=config.OLLAMA_MODEL,
+        help=f"Ollama model to use (default: {config.OLLAMA_MODEL})",
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show additional details"
@@ -692,15 +568,15 @@ def main():
     tool = StockSummaryTool(model=args.model)
     result = tool.get_summary(args.ticker)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Stock Summary: {result.ticker}")
     print(f"Context Level: {result.context_level}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     print(result.summary)
 
     if args.verbose and result.data.quote:
         q = result.data.quote
-        print(f"\n{'─'*60}")
+        print(f"\n{'-' * 60}")
         print(f"Quote Data: ${q.price:.2f} ({q.change_percent:+.2f}%)")
         print(f"Volume: {q.volume:,}")
         if result.data.news:

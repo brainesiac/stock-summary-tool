@@ -46,14 +46,34 @@ ollama serve
 
 ## Configuration
 
-The tool uses a Benzinga API key. You can configure it in two ways:
+The tool uses a `.env` file for configuration. Copy the example and add your credentials:
 
-1. **Environment variable** (recommended):
 ```bash
-export BENZINGA_API_KEY="your-api-key"
+cp .env.example .env
+# Edit .env with your API key
 ```
 
-2. **Pass directly** when instantiating the tool:
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BENZINGA_API_KEY` | Your Benzinga API key (required) | - |
+| `BENZINGA_BASE_URL` | Benzinga API base URL | `https://api.benzinga.com` |
+| `OLLAMA_MODEL` | Default Ollama model | `qwen2.5-coder:7b` |
+| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
+| `LLM_TEMPERATURE` | LLM sampling temperature | `0.3` |
+| `LLM_MAX_TOKENS` | Max tokens to generate | `300` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+
+### Configuration File
+
+All prompts, constants, and settings are centralized in `config.py`:
+- API endpoints and pagination defaults
+- Sector classification keywords
+- Prompt templates for each context level
+- HTTP client settings
+
+You can also pass the API key directly:
 ```python
 tool = StockSummaryTool(api_key="your-api-key")
 ```
