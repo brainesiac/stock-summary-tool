@@ -199,6 +199,8 @@ SECTOR_KEYWORDS = {
 
 STOCK_SPECIFIC_PROMPT = """Generate a concise stock summary for investors.
 
+Current Date/Time: {current_datetime}
+
 Stock: {ticker} ({company})
 Price: ${price:.2f} ({change_percent:+.2f}%)
 Volume: {volume:,}
@@ -211,7 +213,7 @@ Analyst Activity:
 {ratings_bullets}
 
 Generate a 3-5 sentence narrative summary covering:
-1. Current price action and what's driving it
+1. Current price action and what's driving it. Use the current date provided above.
 2. Key news developments if notable
 3. Analyst sentiment if available
 
@@ -219,6 +221,8 @@ Be factual and avoid speculation. Write in a professional financial news style."
 
 
 SECTOR_CONTEXT_PROMPT = """Generate a concise stock summary with sector context.
+
+Current Date/Time: {current_datetime}
 
 Stock: {ticker} ({company})
 Price: ${price:.2f} ({change_percent:+.2f}%)
@@ -232,7 +236,7 @@ Market Context:
 - Top losers today: {losers_str}
 
 Generate a 3-5 sentence summary that:
-1. Describes the stock's current price movement
+1. Describes the stock's current price movement. Use the current date provided above.
 2. Contextualizes performance relative to broader market/sector trends
 3. Notes the lack of recent news while remaining informative
 
@@ -240,6 +244,8 @@ Be factual and professional. Acknowledge limited company-specific data."""
 
 
 MARKET_CONTEXT_PROMPT = """Generate a market context summary for a stock with limited data.
+
+Current Date/Time: {current_datetime}
 
 Stock: {ticker}
 Limited quote or company data available for this ticker.
@@ -251,7 +257,7 @@ Market Overview:
 
 Generate a 3-5 sentence summary that:
 1. Acknowledges limited data for this specific ticker
-2. Provides current market conditions that could affect stocks generally
+2. Provides current market conditions that could affect stocks generally. Use the current date provided above.
 3. Notes key economic events or market themes
 
 Be factual and professional. Focus on providing useful market context."""

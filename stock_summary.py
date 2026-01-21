@@ -329,6 +329,11 @@ def determine_context_level(data: StockData) -> str:
 # =============================================================================
 
 
+def get_current_datetime() -> str:
+    """Get formatted current date/time string."""
+    return datetime.now().strftime("%B %d, %Y at %I:%M %p %Z").strip()
+
+
 def build_stock_specific_prompt(data: StockData) -> str:
     """Build prompt for stock-specific context level."""
     quote = data.quote
@@ -355,6 +360,7 @@ def build_stock_specific_prompt(data: StockData) -> str:
     market_cap_line = f"Market Cap: ${quote.market_cap / 1e9:.2f}B" if quote.market_cap else ""
 
     return config.STOCK_SPECIFIC_PROMPT.format(
+        current_datetime=get_current_datetime(),
         ticker=ticker,
         company=company,
         price=quote.price,
@@ -378,6 +384,7 @@ def build_sector_context_prompt(data: StockData) -> str:
     losers_str = ", ".join(f"{m.symbol} ({m.change_percent:+.1f}%)" for m in data.losers[:3])
 
     return config.SECTOR_CONTEXT_PROMPT.format(
+        current_datetime=get_current_datetime(),
         ticker=ticker,
         company=company,
         price=quote.price,
@@ -404,6 +411,7 @@ def build_market_context_prompt(data: StockData) -> str:
         events_str = "No major events scheduled"
 
     return config.MARKET_CONTEXT_PROMPT.format(
+        current_datetime=get_current_datetime(),
         ticker=ticker,
         gainers_str=gainers_str or "N/A",
         losers_str=losers_str or "N/A",
