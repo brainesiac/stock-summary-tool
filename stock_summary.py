@@ -50,6 +50,8 @@ class QuoteData(BaseModel):
     volume: int = 0
     market_cap: Optional[float] = None
     previous_close: float = 0.0
+    sector: str = ""
+    industry: str = ""
 
 
 class NewsItem(BaseModel):
@@ -173,6 +175,8 @@ class BenzingaClient:
             volume=int(quote.get("volume", 0) or 0),
             market_cap=float(quote.get("marketCap", 0) or 0) if quote.get("marketCap") else None,
             previous_close=float(previous_close),
+            sector=quote.get("sector", "") or "",
+            industry=quote.get("industry", "") or "",
         )
 
     def get_news(self, ticker: str, page_size: int = None) -> list[NewsItem]:
@@ -290,15 +294,19 @@ class BenzingaClient:
 # =============================================================================
 
 
-def derive_sector(company_name: str) -> str:
-    """Derive sector from company name using keyword matching."""
-    if not company_name:
-        return "General Market"
+def get_sector(quote: QuoteData) -> str:
+    """Get sector from quote data, with keyword fallback."""
+    # Use API-provided sector if available
+    if quote and quote.sector:
+        return quote.sector
 
-    name_lower = company_name.lower()
-    for sector, keywords in config.SECTOR_KEYWORDS.items():
-        if any(kw in name_lower for kw in keywords):
-            return sector
+    # Fallback to keyword matching on company name
+    if quote and quote.company_name:
+        name_lower = quote.company_name.lower()
+        for sector, keywords in config.SECTOR_KEYWORDS.items():
+            if any(kw in name_lower for kw in keywords):
+                return sector
+
     return "General Market"
 
 
@@ -363,7 +371,7 @@ def build_sector_context_prompt(data: StockData) -> str:
     quote = data.quote
     ticker = data.ticker
     company = quote.company_name if quote else ticker
-    sector = derive_sector(company)
+    sector = get_sector(quote)
 
     # Format movers
     gainers_str = ", ".join(f"{m.symbol} ({m.change_percent:+.1f}%)" for m in data.gainers[:3])
@@ -442,7 +450,7 @@ def generate_fallback_summary(data: StockData, context_level: str) -> str:
 
     elif context_level == config.CONTEXT_SECTOR and data.quote:
         quote = data.quote
-        sector = derive_sector(quote.company_name)
+        sector = get_sector(quote)
         summary = f"{data.ticker} ({quote.company_name}) in the {sector} sector "
         summary += f"is trading at ${quote.price:.2f} ({quote.change_percent:+.2f}%). "
         summary += "No recent company-specific news available."
